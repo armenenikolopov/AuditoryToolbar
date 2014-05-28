@@ -28,11 +28,11 @@
 #include "ResponseMapConfig.s2s"    'this contains installation-specific parameters. 
                                     ' Keep this outside the file for easy code updating. 
 
-'MatLabOpen();   'oepn matlab connection
-'MatLabShow(1);  'make matlab visible
-
+MatLabOpen();   'oepn matlab connection
+MatLabShow(1);  'make matlab visible
+'SetupPlaywaveArea%(); call this when you first start a config. then comment out; 
 DoToolbar();  'Open toolbar - make buttons, etc.
-'MatLabClose();  'Close matlab connection. This should happen only when you quit the toolbar
+MatLabClose();  'Close matlab connection. This should happen only when you quit the toolbar
 Halt;
 
 '''''''''''''END TOOLBAR INITIATOR
@@ -145,12 +145,15 @@ end
 proc ClearWavePlayArea(sp%)
 var pts% := Trunc((platodur + rampdur*2)/tres);
 var blankarr[pts%]; 
+printlog(sp%);
+printlog(wavekey$[sp%]);
 PlayWavePoints(wavekey$[sp%],pts%);
 PlayWaveCopy(wavekey$[sp%],blankarr[],0);
 
 end
 
 func ExportToMatlab(starttime,mlflag%)
+View(SampleHandle(0));
 var fname$ := FileName$(3)+ FileName$(4); 
 var path$ := filename$(1) + FileName$(2);
 var err;
@@ -447,7 +450,6 @@ proc LoadCalibration()
 ReadCalibration();
 if calibLevel[0] = 0.0 then
     Message("There is currently no calibration data. Please Calibrate before using toolbar.");
-    InactivateToolbar();
 endif;
 end
 
@@ -481,6 +483,8 @@ var ok%;
 
 ReadCalibration();
 var calev := calibLevel[sp%];
+currentCalibSpeaker% := sp%;
+
 
 DlgCreate ("Sound Level Calibration");        'start new dialog
 dlgText(Print$("Calibrate the sound output of this toolbar by playing \ncalibration tone (%d Hz at %d V) and recording \nSound Level at position of interest",calibFreq,calibVoltage),0,1);
@@ -491,15 +495,13 @@ DlgButton (3, "Play calibration tone",CalibTonePlay%,1,3);
 DlgButton (4, "Stop calibration tone",CalibToneStop%,20,3);
 'DlgAllow(0x3ff, 0, CalibrateDialogChange%);  'Allow all, no idle, change function
 
-ok% := DlgShow(calibLevel);
 ok% := DlgShow(calev);
-calibLevel[sp%] := calev;
 
-CalibToneStop%() 'Stop playing sound in case we had started it with the play calib tone button
+CalibToneStop%(); 'Stop playing sound in case we had started it with the play calib tone button
 
 if (ok% <> 0) then 'we hit save or OK
+    calibLevel[sp%] := calev;
    SaveCalibration%(); 
-    'ActivateToolbar(); ' Activate toolbar in case it's been inactivated
 endif;
  return 1;
 end
@@ -628,14 +630,6 @@ end
 
 
 ''''''''''TOOLBAR FUNCTIONS
-proc ActivateToolbar()
-ToolbarEnable(3,1);
-ToolbarEnable(5,1);
-end
-proc InactivateToolbar()
-ToolbarEnable(3,0);
-ToolbarEnable(5,0);
-end
 
 
 Func DoToolbar()    'Set your own name...
@@ -674,7 +668,12 @@ if SampleStatus() = -1 then
     statusdesc$ := "OFFLINE version. You can add new playback areas.";
     resize keylist$[10];
     keylist$[0]:="z";keylist$[1]:="x";keylist$[2]:="c";keylist$[3]:="v";keylist$[4]:="b";	'bottom row of qwerty keboard +jkl.
-    keylist$[5]:="n";keylist$[6]:="m";keylist$[7]:="j";keylist$[8]:="k";keylist$[9]:=wavekey$;
+    keylist$[5]:="n";keylist$[6]:="m";keylist$[7]:="j";keylist$[8]:="k"; keylist$[9] := "l";
+    
+    var i%;
+    for i% := 0 to nSpeakers%-1 do  'load all possible speaker keys in.  
+        keylist$[i%]:=wavekey$[i%];
+        next;
 else
     'Load keylist with existing keys. 
     GetKeylist(keylist$[]); 
@@ -733,7 +732,12 @@ if SampleStatus() = -1 then
     statusdesc$ := "OFFLINE version. You can add new playback areas.";
     resize keylist$[10];
     keylist$[0]:="z";keylist$[1]:="x";keylist$[2]:="c";keylist$[3]:="v";keylist$[4]:="b";	'bottom row of qwerty keboard +jkl.
-    keylist$[5]:="n";keylist$[6]:="m";keylist$[7]:="j";keylist$[8]:="k";keylist$[9]:=wavekey$;
+    keylist$[5]:="n";keylist$[6]:="m";keylist$[7]:="j";keylist$[8]:="k";keylist$[9] := "l";
+    
+    var i%;
+    for i% := 0 to nSpeakers%-1 do  'load all possible speaker keys in.  
+        keylist$[i%]:=wavekey$[i%];
+        next;
 else
     'Load keylist with existing keys. 
     GetKeylist(keylist$[]); 
