@@ -108,7 +108,10 @@ var tonelist2[1][2];
 
 matlabBF := 0; 
 
-ClearWavePlayArea();    ' Clear out the waveplay area!
+var i%;
+for i% := 0 to nSpeakers%-1 do
+ClearWavePlayArea(i%);    ' Clear out the waveplay area for each speaker.
+next;
 
 MakeToneList(tonelist[][], prifreqlo%, prifreqhi%, prifreqres%, prilevello, prilevelhi, prilevelres);
 
@@ -139,11 +142,11 @@ end
 'When you've started, make the waveplay area be only as large
 ' as the tone we are going to be playing, and additionally, set
 ' it all to 0!
-proc ClearWavePlayArea()
+proc ClearWavePlayArea(sp%)
 var pts% := Trunc((platodur + rampdur*2)/tres);
 var blankarr[pts%]; 
-PlayWavePoints(wavekey$,pts%);
-PlayWaveCopy(wavekey$,blankarr[],0);
+PlayWavePoints(wavekey$[sp%],pts%);
+PlayWaveCopy(wavekey$[sp%],blankarr[],0);
 
 end
 
@@ -246,8 +249,8 @@ next
 
 'play a final concluding silence and make a mark
 var arr[0];
-MakeSound(arr[], spontcode%, 0,platodur,rampdur);
-SampleKey(seqkey$);
+MakeSound(arr[], mainSpeaker%, spontcode%, 0,platodur,rampdur);
+SampleKey(seqkey$[mainSpeaker%]);
 SampleText("End");
 yield(0.1); 'wait a bit so that the last samplekey gets triggered before we save to matlab. 
 end
@@ -258,13 +261,13 @@ var tonearr[0];
 'printlog("%d hZ, %d dB\n",freq%,level%);
 
 'make the tone burst
-MakeSound(tonearr,freq%,level,plato,ramp);
+MakeSound(tonearr,mainSpeaker%, freq%,level,plato,ramp);
 
     
     'copy to waveplay area
-    PlayWavePoints(wavekey$,len(tonearr));    
-    var a% := PlayWaveCopy(wavekey$,tonearr,0);    
-    SampleKey(seqkey$);
+    PlayWavePoints(wavekey$[mainSpeaker%],len(tonearr));    
+    var a% := PlayWaveCopy(wavekey$[mainSpeaker%],tonearr,0);    
+    SampleKey(seqkey$[mainSpeaker%]);
     
     docase      'print the corrent sample text for noise, silence, tone. 
     case freq% = spontcode% then
@@ -371,25 +374,25 @@ end
 'Gives a factor by which to multiply a wave, in order to get
 ' a signal of db spl 'level', given that signal has a givern rms.
 ' what I'll take advantage of here is that
-func SetLevel(wav[], level)
+func SetLevel(wav[], speaker%,level)
 ' the constant there is sqrt(2)/2, the RMS of a sine wave (which is the calibration tone)
-arrmul(wav,calibVoltage*0.707107*Pow(10,(level-calibLevel)/20.0)/rms(wav));
+arrmul(wav,calibVoltage*0.707107*Pow(10,(level-calibLevel[speaker%])/20.0)/rms(wav));
 end
 
-proc MakeSound(arr[], freq%, level,pdur,rdur)
+proc MakeSound(arr[], sp%, freq%, level,pdur,rdur)
 
 resize arr[(pdur + 2*rdur)/tres];
 docase
 case freq% = noisecode% then                'noise
     NoiseBurst(arr);
-    SetLevel(arr,level);
+    SetLevel(arr,sp%,level);
     RampSound(arr,rdur);  
 case freq% = spontcode% then                'blank
     ArrConst(arr, 0); 
 else    'we're making an actual tone        'tone
     'generate a ramped sinewave
     ToneBurst(arr,1.0/freq%);
-    SetLevel(arr,level);
+    SetLevel(arr,sp%,level);
     RampSound(arr,rdur);
 
 endcase;
@@ -441,20 +444,45 @@ end
 ' this proc is called at the beginnin of toolbar run, and simply loads
 ' the calibration, and pops up a dialog box if there is no calibratoin
 proc LoadCalibration()
-calibLevel := ReadCalibration();
-if calibLevel = 0.0 then
+ReadCalibration();
+if calibLevel[0] = 0.0 then
     Message("There is currently no calibration data. Please Calibrate before using toolbar.");
     InactivateToolbar();
 endif;
 end
 
 
+'Make an array of speaker names, used for presenting in dialogs. 
+func GetSpeakerList(arr$[])
+resize arr$[nSpeakers%]; 
+var i%;
+for i%:=0 to nSpeakers%-1 do
+    arr$[i%] := Str$(i%);
+next;
+end
+
+func CalibrateMain%()
+var ok%; var list$[0]; 
+DlgCreate("Calibration"); 
+GetSpeakerList(list$[]);
+
+DlgList(1,"Speaker", list$[],100);    
+DlgButton(2, "Calibrate",Calibrate%);
+DlgButton(3, "Test Calibration",TestCalibration%);
+
+var ans%;
+ ok% := DlgShow(ans%);
+return 1; 
+end;
 
 func Calibrate%()
+var sp% :=DlgValue(1);
 var ok%;
 
+ReadCalibration();
+var calev := calibLevel[sp%];
+
 DlgCreate ("Sound Level Calibration");        'start new dialog
-calibLevel := ReadCalibration();
 dlgText(Print$("Calibrate the sound output of this toolbar by playing \ncalibration tone (%d Hz at %d V) and recording \nSound Level at position of interest",calibFreq,calibVoltage),0,1);
 dlgReal(1,"Sound Level (SPL dB): ",0.1,200,-5,4);
 'dlgtext(print%("Saved value: %f",read
@@ -464,60 +492,57 @@ DlgButton (4, "Stop calibration tone",CalibToneStop%,20,3);
 'DlgAllow(0x3ff, 0, CalibrateDialogChange%);  'Allow all, no idle, change function
 
 ok% := DlgShow(calibLevel);
+ok% := DlgShow(calev);
+calibLevel[sp%] := calev;
 
 CalibToneStop%() 'Stop playing sound in case we had started it with the play calib tone button
 
 if (ok% <> 0) then 'we hit save or OK
    SaveCalibration%(); 
-    ActivateToolbar(); ' Activate toolbar in case it's been inactivated
+    'ActivateToolbar(); ' Activate toolbar in case it's been inactivated
 endif;
  return 1;
 end
 
-
+'save calibration to registry
 func SaveCalibration%()
-var bh%;
-    FileDelete(calibfile$);
-    bh% := FileOpen(calibfile$, 9, 1);
-    if (bh%<0) then
-        printlog(bh%);
-        printlog("Error: Calibration data not loaded");
-    endif;
-    View(bh%).BWrite(calibLevel);
-    View(bh%); 
-FileClose();
-return 1;
-end
+var key$ :="SpeakerCalibration";
+var i%; 
+for i% := 0 to nSpeakers%-1 do
+    profile(key$,"calibLevel"+Str$(i%),Str$(calibLevel[i%])); 
+next;
 
-func ReadCalibration()
-var lev; 
-var bh%; 'binary handle
+end;
 
-bh% := FileOpen(calibfile$, 9,0);
-if (bh%<0) then
-    lev := 0.0;
-else
-    View(bh%).Bread(lev);
-endif;
+'read calibration from registry
+proc ReadCalibration()
+var key$ :="SpeakerCalibration";
+var lev$; 
+var i%; 
+for i% := 0 to nSpeakers%-1 do
+    profile(key$,"calibLevel"+Str$(i%),"",lev$); 
+    printlog(lev$); 
+    calibLevel[i%] := Val(lev$); 
+next;
 
-FileClose();
-return lev;
-end
+end;
+
+
 
 func CalibTonePlay%()
 'load 2khz tone into waveplay$ key and samplkey() it.
 var arr[(platodur + 2*rampdur)/tres];
 
-ClearWavePlayArea();    ' Clear out the waveplay area!
+ClearWavePlayArea(currentCalibSpeaker%);    ' Clear out the waveplay area!
 
 ToneBurst(arr,1.0/calibFreq); 
 ArrMul(arr,calibVoltage);   'rather than set a level, just set it to a hard, known, voltage
 
-var ok%:=PlayWaveCopy(wavekey$,arr,0);
+var ok%:=PlayWaveCopy(wavekey$[currentCalibSpeaker%],arr,0);
 
-PlayWaveEnable(wavekey$,1);
-PlayWaveCycles(wavekey$,0);	'NEED TO CLEAR THIS ON STOP. It cycles!
-samplekey(wavekey$);
+PlayWaveEnable(wavekey$[currentCalibSpeaker%],1);
+PlayWaveCycles(wavekey$[currentCalibSpeaker%],0);	'NEED TO CLEAR THIS ON STOP. It cycles!
+samplekey(wavekey$[currentCalibSpeaker%]);
 return 1;
 end;
 
@@ -526,32 +551,37 @@ func CalibTestPlay%()
 'load 2khz tone into waveplay$ key and samplkey() it.
 var arr[(platodur + 2*rampdur)/tres];
 
-ClearWavePlayArea();    ' Clear out the waveplay area!
+ClearWavePlayArea(currentCalibSpeaker%);    ' Clear out the waveplay area!
 
 ToneBurst(arr,1.0/calibFreq); 
-SetLevel(arr,60.0);
+SetLevel(arr,currentCalibSpeaker%,60.0);
 
-var ok%:=PlayWaveCopy(wavekey$,arr,0);
+var ok%:=PlayWaveCopy(wavekey$[currentCalibSpeaker%],arr,0);
 
-PlayWaveEnable(wavekey$,1);
-PlayWaveCycles(wavekey$,0);	'NEED TO CLEAR THIS ON STOP. It cycles!
-samplekey(wavekey$);
+PlayWaveEnable(wavekey$[currentCalibSpeaker%],1);
+PlayWaveCycles(wavekey$[currentCalibSpeaker%],0);	'NEED TO CLEAR THIS ON STOP. It cycles!
+samplekey(wavekey$[currentCalibSpeaker%]);
 return 1;
 end;
 
 
 func CalibToneStop%()
 'stops the tone from playing and returns levels to 0 by sampling again. 
-ClearWavePlayArea(); 
+ClearWavePlayArea(currentCalibSpeaker%); 
 PlayWaveStop();
-PlayWaveCycles(wavekey$,1);  'was temporarily used for cycling!
-samplekey(wavekey$); 'actually play it!
+PlayWaveCycles(wavekey$[currentCalibSpeaker%],1);  'was temporarily used for cycling!
+samplekey(wavekey$[currentCalibSpeaker%]); 'actually play it!
 return 1;
 end;
 
 
 func TestCalibration%()
 var ok%;
+var sp% :=DlgValue(1);
+
+ReadCalibration();
+currentCalibSpeaker% :=  sp%; 
+
 DlgCreate ("Sound Level Calibration Test");        'start new dialog
 DlgButton(0,"");    ' get rid fo the cancel button 
 DlgButton (3, "Play 60 dB tone",CalibTestPlay%,1,3);
@@ -584,12 +614,13 @@ return;
 end;
 
 
+'' when should this be called? 
 proc ClearPWArea()
 ' Only to be called when sampling is off. 
 var blankarr[2*(platodur + 2*rampdur)/tres]; 
-var ok%:=PlayWaveAdd(wavekey$,label$,tonedac%,1/tres,blankarr[]);
-PlayWaveEnable(wavekey$,1);
-PlayWaveCycles(wavekey$,1);	                      'number of cycles to do
+var ok%:=PlayWaveAdd(wavekey$[mainSpeaker%],label$,tonedac%[mainSpeaker%],1/tres,blankarr[]);
+PlayWaveEnable(wavekey$[mainSpeaker%],1);
+PlayWaveCycles(wavekey$[mainSpeaker%],1);	                      'number of cycles to do
 'View(App(5)).WindowVisible(1);	                      'show playwave bar
 return;
 end
@@ -615,10 +646,9 @@ ToolbarSet(0, "Idle", fidle%);   'Link to function
 ' NOTE THAT THESE TOOLBAR NUMBERS ARE USED in (in)ActivateToolbar()
 ToolbarSet(3, "Map", main%);   'Link to function
 ToolbarSet(4, "Rate Level", RateLevel%);   'Link to function
-ToolbarSet(5,"Calibrate",Calibrate%);
-ToolbarSet(6,"Test Calibration",TestCalibration%);
-Toolbarset(7,"Add Tone",AddTone%); 
-Toolbarset(8,"Add Notch Noise",AddNotch%); 
+ToolbarSet(5,"Calibrate",CalibrateMain%);
+Toolbarset(6,"Add Tone",AddTone%); 
+Toolbarset(7,"Add Notch Noise",AddNotch%); 
 'toolbarset(6,"Setup Playwave Area (sampling stopped)",SetupPlaywaveArea%); 
 'ToolbarSet(8,"Test",test%);
 
@@ -638,7 +668,8 @@ end
 
 'if flag = 0, add a tone, if flag=1, add noise. 
 func AddTone%()
-var freq:=10000,level:=60,pdur:=platodur*1000,rdur:=rampdur*1000,keyndx%, mylabel$, ok%, keylist$[10], tonearr[1], statusdesc$;
+var freq:=10000,level:=60,pdur:=platodur*1000,rdur:=rampdur*1000,keyndx%, mylabel$, ok%, keylist$[10], tonearr[1], statusdesc$,splist$[0],sp%;
+GetSpeakerList(splist$[]);
 if SampleStatus() = -1 then
     statusdesc$ := "OFFLINE version. You can add new playback areas.";
     resize keylist$[10];
@@ -653,21 +684,22 @@ endif
 
     DlgCreate("Add tone playback");
 dlgText(statusdesc$,0,6);
- dlgReal(1,print$("Frequency (Hz) (%d for noise)",noisecode%),min(noisecode%,0),sf/2.0);
-dlgReal(2,"Level (SPL)",0,75);
-DlgText("Hotkey to play the Tone:",0,3);
-DlgList(3,5,keylist$[],10,37);
-dlgReal(4,"Plateau Length (ms)",0.0,10000.0); ' can calculate a limit on here actually
-dlgReal(5,"Ramp Length (ms)",2.0,10000.0);
+DlgList(1,"Speaker", splist$[],100);   
+ dlgReal(2,print$("Frequency (Hz) (%d for noise)",noisecode%),min(noisecode%,0),sf/2.0);
+dlgReal(3,"Level (SPL)",0,75);
+DlgText("Hotkey to play the Tone:",0,4);
+DlgList(4,5,keylist$[],10,37);
+dlgReal(5,"Plateau Length (ms)",0.0,10000.0); ' can calculate a limit on here actually
+dlgReal(6,"Ramp Length (ms)",2.0,10000.0);
 
-    ok% := DlgShow(freq,level,keyndx%,pdur,rdur);
+    ok% := DlgShow(sp%,freq,level,keyndx%,pdur,rdur);
 
 if not ok% then return 1; endif;  
 
 pdur := pdur / 1000.0; 'convert from ms to sec
 rdur := rdur / 1000.0; 'convert from ms to sec
 
-MakeSound(tonearr,freq,level,pdur,rdur);
+MakeSound(tonearr,sp%,freq,level,pdur,rdur);
 
 if (len(tonearr) >= maxPWpts%) then
     message(print$("The sound you have selected is too long. Keep it under %d data points.",maxPWpts%));
@@ -681,7 +713,7 @@ endif;
 
 if SampleStatus() = -1 then
     'ClearWavePlayArea();
-PlayWaveAdd(keylist$[keyndx%], mylabel$, tonedac%, sf, tonearr); 
+PlayWaveAdd(keylist$[keyndx%], mylabel$, tonedac%[sp%], sf, tonearr); 
 else
 PlayWavePoints(keylist$[keyndx%],len(tonearr)); 
     PlayWaveLabel$(keylist$[keyndx%],mylabel$);
@@ -695,7 +727,8 @@ end
 
 
 func AddNotch%()
-var freqlo:=10000,freqhi:=20000,level:=60,pdur:=platodur*1000,rdur:=rampdur*1000,keyndx%, mylabel$, ok%, keylist$[10], tonearr[1], statusdesc$;
+var freqlo:=10000,freqhi:=20000,level:=60,pdur:=platodur*1000,rdur:=rampdur*1000,keyndx%, mylabel$, ok%, keylist$[10], tonearr[1], statusdesc$,splist$[0],sp%;
+GetSpeakerList(splist$[]);
 if SampleStatus() = -1 then
     statusdesc$ := "OFFLINE version. You can add new playback areas.";
     resize keylist$[10];
@@ -709,15 +742,16 @@ else
 endif
 
     DlgCreate("Add notched noise playback");
-    dlgText(statusdesc$,0,7);
-dlgReal(1,"Notch low freq (Hz)",0,sf/2.0);
-dlgReal(2,"Notch high freq (Hz)",0,sf/2.0);
-dlgReal(3,"Level (SPL)",0,75);
-DlgText("Hotkey to play the Tone:",0,4);
-DlgList(4,5,keylist$[],10,37);
-dlgReal(5,"Plateau Length (ms)",0.0,10000.0); ' can calculate a limit on here actually
-dlgReal(6,"Ramp Length (ms)",2.0,10000.0);
-    ok% := DlgShow(freqlo,freqhi,level,keyndx%,pdur, rdur);
+dlgText(statusdesc$,0,7);
+DlgList(1,"Speaker", splist$[],100);   
+dlgReal(2,"Notch low freq (Hz)",0,sf/2.0);
+dlgReal(3,"Notch high freq (Hz)",0,sf/2.0);
+dlgReal(4,"Level (SPL)",0,75);
+DlgText("Hotkey to play the Tone:",0,5);
+DlgList(5,5,keylist$[],10,37);
+dlgReal(6,"Plateau Length (ms)",0.0,10000.0); ' can calculate a limit on here actually
+dlgReal(7,"Ramp Length (ms)",2.0,10000.0);
+    ok% := DlgShow(sp%,freqlo,freqhi,level,keyndx%,pdur, rdur);
 
 if not ok% then return 1; endif;  
 
@@ -727,8 +761,9 @@ rdur := rdur / 1000.0; 'convert from ms to sec
 
 resize tonearr[(pdur + 2*rdur)/tres];
 
+
     NotchBurst(tonearr,freqlo,freqhi);
-    SetLevel(tonearr,level);
+    SetLevel(tonearr,sp%,level);
     RampSound(tonearr,rdur);  
     
   
@@ -741,9 +776,9 @@ mylabel$ := "notch";
 
 if SampleStatus() = -1 then
     'ClearWavePlayArea();
-PlayWaveAdd(keylist$[keyndx%], mylabel$, tonedac%, sf, tonearr); 
+PlayWaveAdd(keylist$[keyndx%], mylabel$, tonedac%[sp%], sf, tonearr); 
 else
-PlayWavePoints(keylist$[keyndx%],len(tonearr)); 
+    PlayWavePoints(keylist$[keyndx%],len(tonearr)); 
     PlayWaveLabel$(keylist$[keyndx%],mylabel$);
     PlayWaveCopy(keylist$[keyndx%],tonearr,0);        
 endif
@@ -757,7 +792,7 @@ end
 'Run this when you first make a configuration. This will set up the waveplay area.
 func SetupPlaywaveArea%()
 var arr[Trunc((platodur+rampdur*2)/tres)];
-AddToPWArea(arr,label$,wavekey$,tonedac%);   
+AddToPWArea(arr,label$,wavekey$[mainSpeaker%],tonedac%[mainSpeaker%]);   
 return 1; 
 end
 
@@ -771,15 +806,15 @@ func test%()
 'load 2khz tone into waveplay$ key and samplkey() it.
 var arr[(platodur + 2*rampdur)/tres];
 
-ClearWavePlayArea();    ' Clear out the waveplay area!
+ClearWavePlayArea(mainSpeaker%);    ' Clear out the waveplay area!
 NoiseBurst(arr);
-SetLevel(arr,60.0);
+SetLevel(arr,mainSpeaker%,60.0);
 
-var ok%:=PlayWaveCopy(wavekey$,arr,0);
+var ok%:=PlayWaveCopy(wavekey$[mainSpeaker%],arr,0);
 
-PlayWaveEnable(wavekey$,1);
-PlayWaveCycles(wavekey$,0);	'NEED TO CLEAR THIS ON STOP. It cycles!
-samplekey(wavekey$);
+PlayWaveEnable(wavekey$[mainSpeaker%],1);
+PlayWaveCycles(wavekey$[mainSpeaker%],0);	'NEED TO CLEAR THIS ON STOP. It cycles!
+samplekey(wavekey$[mainSpeaker%]);
 
 return 1; 
 end

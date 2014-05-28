@@ -4,8 +4,7 @@
 ' Installation Parameters - Params to be changed on a per-machine basis
 
 var sf := 250000;                              'Sampling Frequency
-var tres := 1.0/sf;                             ' this should not be changed.
-var tonedac% := 0;                             'DAC output used for tone output
+var tres := 1.0/sf;                      'DAC output used for tone output
 var maxPWpts% := 750000;                        ' maximum size, in points, of 1 playwave area. ~32mb (in pts) for power 1401, ~750kb (in pts) for micro1401-mk II, ~3mb for micro3
 
 var chanVoltage% := 3;         ' channel w/ the extracellular recording
@@ -19,9 +18,24 @@ var calibfile$ := "C:\\work\\test\\test5.dat";      'file that saves calibration
 
 ''''''''''''''''''''
 
-var wavekey$ := "a";                            'arbitrary waveform key
-var label$   := "auto";                         'arbitrary waveform label 
-var seqkey$  := "b";                            'sequencer key, includes waveform and digital out
+var label$   := "auto"; 
+
+
+var nSpeakers% := 2;
+
+var mainSpeaker% := 0; 'this is the speaker used for rate levels, response maps, etc.
+
+var tonedac%[nSpeakers%]; 
+    tonedac%[0] := 0; 
+    tonedac%[1]:=1;       
+
+var wavekey$[nSpeakers%]; 
+    wavekey$[0] := "a"; 
+    wavekey$[1] := "b";                            'arbitrary waveform key
+                        'arbitrary waveform label 
+var seqkey$[2]; 
+    seqkey$[0] := "a"; 
+    seqkey$[1] := "b";                               'sequencer key, includes waveform and digital out
 
 ' Spontaneous, noise rate calculation
 var spontdur   := 1;                            'length of silence presentations (s)           
@@ -53,8 +67,9 @@ var intvldur := 0.150;
 ' Calibration Parameters
 var calibVoltage := 1;
 var calibFreq   := 1000; 'frequency of calibration tone
-var calibLevel; ' gets set at start. This is the level of a calibFreq tone played at calibVoltage
-
+var calibLevel[nSpeakers%]; ' gets set at start. This is the level of a calibFreq tone played at calibVoltage
+var currentCalibSpeaker% :=-1;  'reallya  temporary variable that should be in the main body :(
+    
 ' OTHER
 var matlabBF;   'matlab saves this
 
