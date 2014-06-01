@@ -3,16 +3,17 @@
 
 ' Installation Parameters - Params to be changed on a per-machine basis
 
-var sf := 250000;   'Sampling Frequency
-var tres := 1.0/sf;                             ' this should not be changed.
+var sf := 250000;                              'Sampling Frequency
+var tres := 1.0/sf;                      'DAC output used for tone output
 var maxPWpts% := 750000;                        ' maximum size, in points, of 1 playwave area. ~32mb (in pts) for power 1401, ~750kb (in pts) for micro1401-mk II, ~3mb for micro3
 
-var chanVoltage% :=1;         ' channel w/ the extracellular recording
-var chanSpikes%   := 5;         ' spikes, event channel
-var chanTrigger%  := 6;         ' digital marker channel for sound initiation
+var chanVoltage% := 3;         ' channel w/ the extracellular recording
+var chanSpikes%   := 4;         ' spikes, event channel
+var chanTrigger%  := 2;         ' digital marker channel for sound initiation
 var chanText%     := 30;        ' text channel describing stimulus
 
-var MatLabDir$ := "C:\\spike7\\scripts\\responsemap\\matlab\\";       'directory where Matlab scripts are. 
+var MatLabDir$ := "c:\\work\\responsemap2\\";       'directory where Matlab scripts are. 
+var calibfile$ := "C:\\work\\test\\test5.dat";      'file that saves calibration data. 
 
 
 ''''''''''''''''''''
@@ -22,19 +23,19 @@ var label$   := "auto";
 
 var nSpeakers% := 2;
 
-var mainSpeaker% := 1; 'this is the speaker used for rate levels, response maps, etc.
+var mainSpeaker% := 0; 'this is the speaker used for rate levels, response maps, etc.
 
-var tonedac%[0]; resize tonedac%[nSpeakers%];
+var tonedac%[nSpeakers%]; 
     tonedac%[0] := 0; 
-    tonedac%[1] := 1;       
+    tonedac%[1]:=1;       
 
-var wavekey$[0]; resize wavekey$[nSpeakers%]; 
-    wavekey$[0] := "x"; 
-    wavekey$[1] := "y";                            'arbitrary waveform key
+var wavekey$[nSpeakers%]; 
+    wavekey$[0] := "a"; 
+    wavekey$[1] := "b";                            'arbitrary waveform key
                         'arbitrary waveform label 
-var seqkey$[0]; resize seqkey$[nSpeakers%];
-    seqkey$[0] := "X"; 
-    seqkey$[1] := "Y";
+var seqkey$[2]; 
+    seqkey$[0] := "a"; 
+    seqkey$[1] := "b";                               'sequencer key, includes waveform and digital out
 
 ' Spontaneous, noise rate calculation
 var spontdur   := 1;                            'length of silence presentations (s)           
@@ -44,11 +45,11 @@ var noisecode% := -1;                           'in the list of tones to be play
 
 ' Primary frequency sweep parameters
 var prifreqlo% := 0000;                          'Minimum frequency tone (hZ)
-var prifreqhi% := 60000;                         'Max frequency tone     (hZ)
+var prifreqhi% := 70000;                         'Max frequency tone     (hZ)
 var prifreqres% := 5000;                         'Frequency resolution (how far b/w tested freqs) (hZ)
 
 var prilevello := 5;                           'Lowest level(SPL dB)
-var prilevelhi := 65;                           'Highest level(SPL dB)
+var prilevelhi := 75;                           'Highest level(SPL dB)
 var prilevelres := 10;                          'Level resolution;
 
 ' Secondary frequency sweep parameters
@@ -64,11 +65,11 @@ var rampdur := 0.005;                               'ramp up (sec)
 var intvldur := 0.150;
 
 ' Calibration Parameters
-var calibVoltage := 4.5;
+var calibVoltage := 1;
 var calibFreq   := 1000; 'frequency of calibration tone
-var calibLevel[0]; resize calibLevel[nSpeakers%]; ' gets set at start. This is the level of a calibFreq tone played at calibVoltage
-var currentCalibSpeaker% :=-1;  'really a  temporary variable that should be in the main body :(
-
+var calibLevel[nSpeakers%]; ' gets set at start. This is the level of a calibFreq tone played at calibVoltage
+var currentCalibSpeaker% :=-1;  'reallya  temporary variable that should be in the main body :(
+    
 ' OTHER
 var matlabBF;   'matlab saves this
 
