@@ -23,15 +23,25 @@
 ''                                  DAC0: Arbitrary waveform, start 0.0011s, length 0.5s. Length should be >= tone+ramp length
 ''                                        and it should be tied to 'wavekey$' below.
 
-'''''''''''TOOLBAR INITIATE
 
+'' EDITS:
+'' Armen 4/15/14 - allowed no-ramp sounds!
+
+'''''''''''TOOLBAR INITIATE
 #include "ResponseMapConfig.s2s"    'this contains installation-specific parameters. 
-                                    ' Keep this outside the file for easy code updating. 
+                                    ' Keep this outside the file for easy code updating.
+
+   
+var AudioStimState%:=0;
+var nextStimTime := 0;
+var stimInterval := 3; 
+
 
 MatLabOpen();   'oepn matlab connection
 MatLabShow(1);  'make matlab visible
 'SetupPlaywaveArea%(); call this when you first start a config. then comment out; 
 DoToolbar();  'Open toolbar - make buttons, etc.
+
 MatLabClose();  'Close matlab connection. This should happen only when you quit the toolbar
 Halt;
 
@@ -68,11 +78,11 @@ end;
 
 proc DoRateLevel(bf%,rlplatodur,rlintvldur,rllevello,rllevelhi,rllevelres,rlrep%)
 var starttime; 'time when tones started to be played
-var tonelist[1][2];
+var tonelist[1][3];
 var level, rep%, k%; 
 var nlevel% := Trunc((rllevelhi - rllevello) / rllevelres) + 1; 
 printlog("Nlevel: %d\n",nlevel%);
-resize tonelist[rlrep%*2*nlevel%][2]; '2 because noise and level 
+resize tonelist[rlrep%*2*nlevel%][3]; '3 because noise and level and speaker
 
 k% :=0; 
 for rep% := 1 to rlrep% do
@@ -80,9 +90,11 @@ for rep% := 1 to rlrep% do
         printlog("k: %d, lev: %d\n",k%,level);
         tonelist[k%][0] := bf%;
         tonelist[k%][1] := level;
+        tonelist[k%][2] := mainSpeaker%;
         
         tonelist[k%+1][0] := noisecode%;
-        tonelist[k%+1 ][1] := level;
+        tonelist[k%+1][1] := level;
+			  tonelist[k%+1][2] := mainSpeaker%;
         
         k% := k% + 2;   'We can only do this because we know that tonelist is an even number of elements long        
     next  
@@ -93,13 +105,85 @@ Shuffle(tonelist[][]);
  
     Print2DList(tonelist[][]);   'print the list of tones. for debugging. 
     starttime := MaxTime()-0.1;
-PlaySweep(tonelist[][],rlplatodur,rampdur, rlintvldur);
-MatLabPut("bf",matlabBF); 
+    PlaySweep(tonelist[][],rlplatodur,rampdur, rlintvldur);
+    MatLabPut("bf",matlabBF); 
     matlabBF := ExportToMatlab(starttime,3);
-
 
 end;
 
+'''''''''''''''''''''''''NOTCH rate level '''''''''''''''''''''
+func NotchRateLevel%()
+var ok%;
+var bf% := matlabBF;
+
+var rlplatodur := platodur*1000;
+var rlintvldur := intvldur*1000;
+var rllevello := prilevello;
+var rllevelhi := prilevelhi; 
+var rllevelres := 1; 
+var rlrep% :=1;
+var rlfreqlo := 15000;
+var rlfreqhi := 25000;
+
+
+DlgCreate("Notch-noise Rate Level Function parameters");
+'DlgInteger(1,"Best Frequency of cell (Hz)",1,100000);
+DlgInteger (1,"Notch low frequency (Hz)",1,100000); 
+DlgInteger (2,"Notch high frequency (Hz)",1,100000); 
+dlginteger(3,"Tone/Noise plateau length (ms)",5,1000);
+dlgInteger(4,"Interval length (ms)",5,1000);
+DlgInteger(5,"Minimum level (dB)",0,100);
+DlgInteger(6,"Maximum level (dB)",0,100);
+dlgReal(7,"Level resolution (dB)",0.01,10);
+DlgInteger(8,"Repetitions",1,100);
+ok% := DlgShow(rlfreqlo,rlfreqhi, rlplatodur,rlintvldur,rllevello,rllevelhi, rllevelres,rlrep%);
+
+if ok% <> 1 then return 1; endif;   'user clicked cancel
+
+rlintvldur := rlintvldur/1000.0; 
+rlplatodur := rlplatodur/1000.0;
+DoNotchRateLevel(rlfreqlo,rlfreqhi,rlplatodur,rlintvldur,rllevello,rllevelhi,rllevelres,rlrep%);
+
+return 1;
+end;
+
+proc DoNotchRateLevel(rlfreqlo,rlfreqhi,rlplatodur,rlintvldur,rllevello,rllevelhi,rllevelres,rlrep%)
+var starttime; 'time when tones started to be played
+var tonelist[1][5];
+var level, rep%, k%; 
+var nlevel% := Trunc((rllevelhi - rllevello) / rllevelres) + 1; 
+printlog("Nlevel: %d\n",nlevel%);
+resize tonelist[rlrep%*2*nlevel%][5]; 
+
+k% :=0; 
+for rep% := 1 to rlrep% do
+    for level := rllevello to rllevelhi step rllevelres do
+        printlog("k: %d, lev: %d\n",k%,level);
+                
+        tonelist[k%][0] := -2; 'rate level code!
+        tonelist[k%][1] := level;
+				tonelist[k%][2] := mainSpeaker%;
+        tonelist[k%][3] := rlfreqlo;
+        tonelist[k%][4] := rlfreqhi;
+        
+        tonelist[k%+1][0] := noisecode%;
+        tonelist[k%+1][1] := level;
+		    tonelist[k%+1][2] := mainSpeaker%;
+                
+        k% := k% + 2;   'We can only do this because we know that tonelist is an even number of elements long        
+    next  
+next    
+
+
+    Shuffle(tonelist[][]);
+ 
+    Print2DList(tonelist[][]);   'print the list of tones. for debugging. 
+    starttime := MaxTime()-0.1;
+    PlaySweep(tonelist[][],rlplatodur,rampdur, rlintvldur);
+'    matlabBF := ExportToMatlab(starttime,3);
+
+end;
+'''''''''''''''''''''''''''''''''''''''''''''''
 
 func main%()
 var starttime; 'time when tones started to be played
@@ -145,15 +229,13 @@ end
 proc ClearWavePlayArea(sp%)
 var pts% := Trunc((platodur + rampdur*2)/tres);
 var blankarr[pts%]; 
-printlog(sp%);
-printlog(wavekey$[sp%]);
 PlayWavePoints(wavekey$[sp%],pts%);
 PlayWaveCopy(wavekey$[sp%],blankarr[],0);
 
 end
 
 func ExportToMatlab(starttime,mlflag%)
-View(SampleHandle(0));
+View(SampleHandle(0));	'this makes sure we're working from the current time view
 var fname$ := FileName$(3)+ FileName$(4); 
 var path$ := filename$(1) + FileName$(2);
 var err;
@@ -247,44 +329,57 @@ proc PlaySweep(tonelist[][],plato,ramp, intvl)
 var i%;
 
 for i% := 0 to len(tonelist[][0])-1 do
-    PlaySound(tonelist[i%][0],tonelist[i%][1],plato,ramp, intvl);
+    PlaySound(tonelist[i%][], plato,ramp, intvl);
 next
 
 'play a final concluding silence and make a mark
 var arr[0];
-MakeSound(arr[], mainSpeaker%, spontcode%, 0,platodur,rampdur);
+var spontparam[2];	'sets up params to play silence
+    spontparam[0] := spontcode%;
+spontparam[1] := 0;
+spontparam[2] := mainSpeaker%;
+MakeSound(arr[], spontparam[],platodur,rampdur);
 SampleKey(seqkey$[mainSpeaker%]);
 SampleText("End");
 yield(0.1); 'wait a bit so that the last samplekey gets triggered before we save to matlab. 
 end
 
-proc PlaySound(freq%,level,plato,ramp, intvl)
+proc PlaySound(params[],plato,ramp, intvl)
 var tonearr[0];
+
+var freq% := params[0];
+var level := params[1];
+var sp%   := params[2];
 
 'printlog("%d hZ, %d dB\n",freq%,level%);
 
 'make the tone burst
-MakeSound(tonearr,mainSpeaker%, freq%,level,plato,ramp);
+MakeSound(tonearr[],params[],plato,ramp);
 
     
     'copy to waveplay area
-    PlayWavePoints(wavekey$[mainSpeaker%],len(tonearr));    
-    var a% := PlayWaveCopy(wavekey$[mainSpeaker%],tonearr,0);    
-    SampleKey(seqkey$[mainSpeaker%]);
+    PlayWavePoints(wavekey$[sp%],len(tonearr));    
+    var a% := PlayWaveCopy(wavekey$[sp%],tonearr,0);    
+    SampleKey(seqkey$[sp%]);
     
     docase      'print the corrent sample text for noise, silence, tone. 
     case freq% = spontcode% then
         SampleText(Print$("Spontaneous, duration %f, offset %f",spontdur,0.0));
     case freq% = noisecode% then
         SampleText(Print$("Broadband Noise at %.2f dB, duration %f, offset %f",level,platodur+rampdur,rampdur/2));
-    else
+	   case freq% = notchcode% then
+			  var notchlo := params[3];
+			  var notchhi := params[4];
+        SampleText(Print$("Notched Noise (notch at %f to %f) at %.2f dB, duration %f, offset %f",notchlo,notchhi,level,platodur+rampdur,rampdur/2));    
+		else
         SampleText(Print$("%d Hz at %.2f dB, duration %f, offset %f",freq%,level,platodur+rampdur,rampdur/2));
-    endcase;
-    
+		endcase;
+
     if (freq% = spontcode%) then                
-        yield(spontdur);
-    else
-        yield(Trunc(intvl)+2*ramp+plato);
+        yield(spontdur);
+		else
+    printlog(Print$("yielding: %f, intvl %f, ramp %f, plato %f\n",intvl+2.0*ramp+plato), intvl, ramp, plato); 
+    yield(intvl+2.0*ramp+plato);
     endif;
 
 end
@@ -300,7 +395,7 @@ nfreqs% += 1; 'for noise!
 
 var listsize% := nfreqs%*nlevel% + spontcnt%; 
 'probably need to check this shit with a mod here!
-resize a[listsize%][2];   'Is correct regardless fo whether mod(Xhi-Xlo,Xres) ==0? (where X is freq or level)????
+resize a[listsize%][3];   'Is correct regardless fo whether mod(Xhi-Xlo,Xres) ==0? (where X is freq or level)????
 
 k% := 0; 
 
@@ -309,6 +404,7 @@ for freq% := freqlo% to freqhi% step freqres% do
     for level := levello to levelhi step levelres do
         a[k%][0] := freq%;       'set freq
         a[k%][1] := level;      'set level
+        a[k%][2] := mainSpeaker%;      'set speaker
         k% := k% + 1;           'increment array position
     next
 next
@@ -317,6 +413,7 @@ next
     for level := levello to levelhi step levelres do
         a[k%][0] := noisecode%;       'set freq
         a[k%][1] := level;      'set level
+        a[k%][2] := mainSpeaker%;      'set speaker
         k% := k% + 1;           'increment array position
     next
 
@@ -326,7 +423,8 @@ next
 var j%;
 for j% := 1 to spontcnt% do
     a[k%][0] := spontcode%;   'silence is represented in the tone list as a 0 frequency tone
-    a[k%][1] := 0; 
+    a[k%][1] := 0;
+    a[k%][2] := mainSpeaker%;      'set speaker
     k% := k% + 1;           ' increment array position
 next    
 
@@ -342,16 +440,24 @@ proc Shuffle(a[][])
 '       j <- random integer with 0 <= j <= i
 '       exchange a[j] and a[i]
 
-var i%, j%, temp0, temp1; 
+		var i%, j%;
+    var temp[len(a[0][])];
 for i% := len(a[][1])-1 to 1 step -1 do
     j% := Trunc(Rand(i%+1,0));
  'PrintLog("Switching: %d, %d\n", i%, j%); 
-    temp0 := a[i%][0];
-    temp1 := a[i%][1];
-    a[i%][0] := a[j%][0];
-    a[i%][1] := a[j%][1];
-    a[j%][0] := temp0;
-    a[j%][1] := temp1; 
+    
+'    temp0 := a[i%][0];
+'    temp1 := a[i%][1];
+'    a[i%][0] := a[j%][0];
+'    a[i%][1] := a[j%][1];
+'    a[j%][0] := temp0;
+'    a[j%][1] := temp1;
+    
+
+    ArrConst(temp,a[i%][]); 
+    ArrConst(a[i%][],a[j%][]); 
+    ArrConst(a[j%][],temp); 
+   
 next
 end
 
@@ -382,28 +488,48 @@ func SetLevel(wav[], speaker%,level)
 arrmul(wav,calibVoltage*0.707107*Pow(10,(level-calibLevel[speaker%])/20.0)/rms(wav));
 end
 
-proc MakeSound(arr[], sp%, freq%, level,pdur,rdur)
+proc MakeSound(arr[], params[], pdur, rdur)
+
+var freq% := params[0];
+var level := params[1];
+var sp%   := params[2];
 
 resize arr[(pdur + 2*rdur)/tres];
 docase
 case freq% = noisecode% then                'noise
     NoiseBurst(arr);
     SetLevel(arr,sp%,level);
-    RampSound(arr,rdur);  
+    if rdur <> 0 then
+        RampSound(arr,rdur);  
+    endif 
+case freq% = notchcode% then                'notch
+	  var notchlo := params[3];
+	  var notchhi := params[4];
+
+    printlog(Print$("Making notch noise. %f, %f", notchlo, notchhi)); 
+    NotchBurst(arr,notchlo,notchhi); 
+    SetLevel(arr,sp%,level);
+    if rdur <> 0  then
+        RampSound(arr,rdur);          
+    endif
 case freq% = spontcode% then                'blank
     ArrConst(arr, 0); 
 else    'we're making an actual tone        'tone
     'generate a ramped sinewave
     ToneBurst(arr,1.0/freq%);
     SetLevel(arr,sp%,level);
-    RampSound(arr,rdur);
+    RampSound(arr,rdur);  
 
 endcase;
 end
 
-proc NotchBurst(arr[], lo, hi); 
-NoiseBurst(arr);
-StopBandFilt(arr,lo,hi,sf); 
+proc NotchBurst(arr[], lo, hi);
+'create a second array because stopband filtering is done such that the first part of the array
+'is blank. 
+'var arr2[len(arr)*2];
+Rand(arr,2,-1);
+StopBandFilt(arr,lo,hi,sf);
+arrconst(arr[0:Trunc(Len(arr)/10)],arr[Trunc(Len(arr)/2):Trunc(Len(arr)/10)]);
 'set last to 0, so does not end on a non-0 level, which can persist
 ' as the level voltage; 
 arr[len(arr)-1] :=0; 
@@ -478,7 +604,7 @@ return 1;
 end;
 
 func Calibrate%()
-var sp% :=DlgValue(1);
+var sp% :=DlgValue(1);	
 var ok%;
 
 ReadCalibration();
@@ -616,7 +742,7 @@ return;
 end;
 
 
-'' when should this be called? 
+'' when should this be called? Should it take a speaker parameter?
 proc ClearPWArea()
 ' Only to be called when sampling is off. 
 var blankarr[2*(platodur + 2*rampdur)/tres]; 
@@ -639,16 +765,37 @@ ToolbarSet(1, "&Quit");    'This button returns its number
 ToolbarSet(0, "Idle", fidle%);   'Link to function
 ' NOTE THAT THESE TOOLBAR NUMBERS ARE USED in (in)ActivateToolbar()
 ToolbarSet(3, "Map", main%);   'Link to function
-ToolbarSet(4, "Rate Level", RateLevel%);   'Link to function
+ToolbarSet(4, "Rate-Level", RateLevel%);   'Link to function
 ToolbarSet(5,"Calibrate",CalibrateMain%);
 Toolbarset(6,"Add Tone",AddTone%); 
 Toolbarset(7,"Add Notch Noise",AddNotch%); 
+Toolbarset(8,"Notch Rate-Level",NotchRateLevel%);
+Toolbarset(9,"Set Laser Threshold",SetLaserThreshold%);
+ToolbarSet(10,"Toggle Stim",ToggleSound%);
+ToolbarSet(11,"Turn Mod Off",ModOff%);
+ToolbarSet(12,"Turn Mod On",ModOn%);
+toolbarset(13,"printcalib",printcalib%); 
 'toolbarset(6,"Setup Playwave Area (sampling stopped)",SetupPlaywaveArea%); 
 'ToolbarSet(8,"Test",test%);
 
-LoadCalibration();  'this loads calibration data AND
-
+ModOn%(); 
+LoadCalibration();  'this loads calibration data
 return Toolbar("Auditory Stimulus Toolbar", 1023);
+end;
+
+
+func ModOff%()
+SampleSeqVar(11,0);
+ToolbarEnable(12,0); 
+ToolbarEnable(13,1);
+return 1;
+end;
+
+func ModOn%()
+SampleSeqVar(11,1);
+ToolbarEnable(12,1); 
+ToolbarEnable(13,0);
+return 1;
 end;
 
 proc GetKeylist(arr$[])
@@ -697,8 +844,10 @@ if not ok% then return 1; endif;
 
 pdur := pdur / 1000.0; 'convert from ms to sec
 rdur := rdur / 1000.0; 'convert from ms to sec
+var params[3]; 
+params[0] := freq; params[1] := level; params[2] := sp%; 
 
-MakeSound(tonearr,sp%,freq,level,pdur,rdur);
+MakeSound(tonearr,params,pdur,rdur);
 
 if (len(tonearr) >= maxPWpts%) then
     message(print$("The sound you have selected is too long. Keep it under %d data points.",maxPWpts%));
@@ -801,28 +950,33 @@ return 1;
 end
 
 Func fidle%()   'Button 2 routine
-'Your code in here...
+var sec := Seconds(); 
+if (AudioStimState%=1) AND (sec >= nextStimTime) Then    
+    SampleKey("e"); 
+    nextStimTime := Seconds() + stimInterval + Rand()*0.2;
+  endif
+    
 return 1;  'This leaves toolbar active
 end;
 
-func test%()
-
-'load 2khz tone into waveplay$ key and samplkey() it.
-var arr[(platodur + 2*rampdur)/tres];
-
-ClearWavePlayArea(mainSpeaker%);    ' Clear out the waveplay area!
-NoiseBurst(arr);
-SetLevel(arr,mainSpeaker%,60.0);
-
-var ok%:=PlayWaveCopy(wavekey$[mainSpeaker%],arr,0);
-
-PlayWaveEnable(wavekey$[mainSpeaker%],1);
-PlayWaveCycles(wavekey$[mainSpeaker%],0);	'NEED TO CLEAR THIS ON STOP. It cycles!
-samplekey(wavekey$[mainSpeaker%]);
-
-return 1; 
-end
-''''''''''''''''''''''''''''''''
+'func test%()
+'
+''load 2khz tone into waveplay$ key and samplkey() it.
+'var arr[(platodur + 2*rampdur)/tres];
+'
+'ClearWavePlayArea();    ' Clear out the waveplay area!
+'NoiseBurst(arr);
+'SetLevel(arr,60.0);
+'
+'var ok%:=PlayWaveCopy(wavekey$,arr,0);
+'
+'PlayWaveEnable(wavekey$,1);
+'PlayWaveCycles(wavekey$,0);	'NEED TO CLEAR THIS ON STOP. It cycles!
+'samplekey(wavekey$);
+'
+'return 1; 
+'end
+'''''''''''''''''''''''''''''''''
 
 
 
@@ -862,3 +1016,44 @@ DrawMode(1,3);	                                     'waveform mode
 WindowVisible(1);
 return;
 end;
+
+func ToggleSound%()
+
+printlog("Checking state\n"); 
+if AudioStimState%=0 then
+    AudioStimState% := 1;
+    nextStimTime := Seconds(); 
+    SampleSeqVar(10,1);
+    printlog("Starting"); 
+else
+       AudioStimState% :=0;
+    SampleSeqVar(10,0);
+        printlog("Stopping"); 
+endif
+return 1; 
+end;
+
+'temporary function to be used for printing a level to set in sequencer script
+func printcalib%()
+var level:=50;
+var sp%;
+for sp% := 0 to nSpeakers%-1 do
+    PrintLog(calibVoltage*0.707107*Pow(10,(level-calibLevel[sp%])/20.0)/0.707107);
+    next;
+printlog("\nlaserThr: %d\n",SampleSeqVar(2));
+
+
+return 1;
+end
+
+'a script version of the sequencer function
+func VDAC16%(v)
+return round(Pow(2,15)/5*v); 
+end
+
+func SetLaserThreshold%()
+var curlev := HCursor(2);
+SampleSeqVar(2,VDAC16%(curlev));
+
+return 1;
+end
